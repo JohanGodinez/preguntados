@@ -115,7 +115,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
     teardownRoom()
     clearHost()
     clearPlayer()
-    set({ state: null, playerId: null, connected: false, error: 'La sala se cerró' })
+    set({ state: null, playerId: null, error: 'La sala se cerró' })
   }
 
   const handleGameChange = (row: Record<string, unknown>) => {
@@ -146,7 +146,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
   const subscribeRoom = (code: string, presenceKey: string, role: 'host' | 'player') => {
     if (!client) return
     currentCode = code
-    channel = client
+    const ch = client
       .channel(`room:${code}`, { config: { presence: { key: presenceKey } } })
       .on(
         'postgres_changes',
@@ -167,17 +167,18 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
         (payload) => handleActionInsert(payload.new as ActionRow),
       )
       .on('presence', { event: 'sync' }, () => {
-        presence = channel?.presenceState() as typeof presence
+        presence = ch.presenceState() as typeof presence
         recompute()
       })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          set({ connected: true, error: null })
-          void channel?.track(role === 'host' ? { role: 'host' } : { role: 'player', playerId: presenceKey })
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          set({ connected: false })
-        }
-      })
+    channel = ch
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        set({ error: null })
+        void ch.track(role === 'host' ? { role: 'host' } : { role: 'player', playerId: presenceKey })
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        set({ error: 'No se pudo conectar a Supabase Realtime' })
+      }
+    })
   }
 
   const fetchRoomSnapshot = async (code: string) => {
@@ -289,7 +290,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
 
   return {
     mode: null,
-    connected: false,
+    connected: isSupabaseConfigured,
     resuming: false,
     state: null,
     playerId: null,

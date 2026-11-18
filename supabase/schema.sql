@@ -77,13 +77,19 @@ alter table public.categories enable row level security;
 alter table public.questions enable row level security;
 
 -- Lectura pública (los códigos de sala son la "credencial de entrada").
+drop policy if exists games_public_read on public.games;
 create policy "games_public_read"   on public.games   for select using (true);
+drop policy if exists players_public_read on public.players;
 create policy "players_public_read" on public.players for select using (true);
+drop policy if exists actions_public_read on public.actions;
 create policy "actions_public_read" on public.actions for select using (true);
+drop policy if exists categories_read on public.categories;
 create policy "categories_read"     on public.categories for select using (true);
+drop policy if exists questions_read on public.questions;
 create policy "questions_read"      on public.questions  for select using (true);
 
 -- Acciones: cualquiera puede insertar la suya; el resto solo por RPC.
+drop policy if exists actions_public_insert on public.actions;
 create policy "actions_public_insert" on public.actions for insert with check (true);
 
 -- secrets: sin policies → nadie la lee ni escribe por API.
@@ -92,8 +98,13 @@ create policy "actions_public_insert" on public.actions for insert with check (t
 revoke insert, update, delete on public.games   from anon, authenticated;
 revoke insert, update, delete on public.players from anon, authenticated;
 revoke insert, update, delete on public.secrets from anon, authenticated;
-revoke all on public.categories from anon, authenticated;
-revoke update, delete, insert on public.questions from anon, authenticated;
+revoke insert, update, delete on public.categories from anon, authenticated;
+grant select on public.categories to anon, authenticated;
+
+-- `correct` oculta por columnas: los clientes solo leen lo demás.
+revoke select on public.questions from anon, authenticated;
+grant select (id, category_id, text, options) on public.questions to anon, authenticated;
+revoke insert, update, delete on public.questions from anon, authenticated;
 
 -- ------------------------------------------------------------
 -- Realtime
@@ -139,7 +150,7 @@ declare
   v_token   text;
   v_alpha   text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 begin
-  v_token := encode(pgcrypto.gen_random_bytes(16), 'hex');
+  v_token := encode(extensions.gen_random_bytes(16), 'hex');
   loop
     v_code := '';
     for i in 1..5 loop
@@ -255,8 +266,8 @@ begin
   end if;
 
   select count(*) into v_count from public.players p where p.game_code = v_code;
-  v_pid   := substr(encode(pgcrypto.gen_random_bytes(4), 'hex'), 1, 8);
-  v_token := encode(pgcrypto.gen_random_bytes(16), 'hex');
+  v_pid   := substr(encode(extensions.gen_random_bytes(4), 'hex'), 1, 8);
+  v_token := encode(extensions.gen_random_bytes(16), 'hex');
 
   insert into public.players (game_code, id, name)
   values (v_code, v_pid, coalesce(nullif(btrim(p_name), ''), 'Jugador ' || (v_count + 1)));
