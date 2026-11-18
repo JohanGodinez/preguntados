@@ -1,33 +1,41 @@
 # AGENTS.md
 
-Preguntados: local party trivia game (Trivial Pursuit–style). React 19 + Vite web client, Express + socket.io server, all TypeScript. UI text is Spanish.
+Preguntados: party trivia game (Trivial Pursuit–style). React 19 + Vite web client, **Sin servidor propio**: Supabase (Postgres + Realtime) es el backend. UI text is Spanish.
 
 ## Commands
 
-- `pnpm dev` — runs Vite dev server **and** the API server (`tsx watch server/index.ts`) via concurrently. Use this, not `vite` alone.
+- `pnpm dev` — Vite dev server only (no backend exists anymore).
 - `pnpm lint` — ESLint (flat config; no type-aware rules).
 - `pnpm build` — `tsc -b && vite build`.
-- `pnpm start` — builds, then serves the built `dist/` (with SPA fallback) from the API server on port 3001; startup logs the LAN URLs. `PORT` env var overrides the port.
+- `pnpm preview` — serves the production build locally.
 
-There are no tests. Verification = `pnpm lint` + typecheck (below). All runtime imports (`express`, `socket.io`, `socket.io-client`, `qrcode.react`, …) must be declared in `package.json`: pnpm manages `node_modules` strictly, so running `pnpm add`/`pnpm install` prunes any package that is imported in code but not declared, and the app stops building.
+There are no tests. Verification = `pnpm lint` + `pnpm build`.
 
-## Typecheck gotcha (important)
-
-- `tsc -b` (root `tsconfig.json`) only covers `src/` and `vite.config.ts`. **`server/` is not typechecked by `pnpm build`.**
-- To typecheck the server, run: `npx tsc -p server/tsconfig.json` (its tsconfig is standalone and not referenced from the root).
-- `tsx` runs the server without typechecking, so server type errors surface only with the command above.
+Requires `.env.local` with `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (see `.env.example`). Without them the app renders "Falta configurar Supabase" instead of connecting.
 
 ## Architecture
 
-- `server/` — socket.io server. `server/index.ts` (entry: binds port 3001 by default, serves `dist/` if it exists), `rooms.ts` (room lifecycle, socket handlers, reconnection tokens), `game.ts` (pure game logic: question picking, wheel categories, scoring).
-- `src/` — React client. Zustand stores in `src/store/` (`roomStore` owns all server state; host credentials in sessionStorage under `preguntados-host`, player credentials in localStorage under `preguntados-player`; settings persisted under `preguntados-ajustes`).
-- `shared/protocol.ts` — single source of truth for all socket event payloads (`PublicState`, `Ack`, event name constants). Client and server both import it; change protocol here, not inline.
-- `src/data/questions.ts` — trivia question bank. **Imported by the server too** (`server/rooms.ts`), so it's not client-only; edits affect game logic on both sides.
+**Host-authoritative, serverless.** The host's browser runs the game engine and writes state; everyone else subscribes via Supabase Realtime. There is no Node server.
+
+- `src/game/engine.ts` — pure game logic (question picking, wheel, scoring, config sanitization). Takes the question bank as a parameter.
+- `src/game/hostEngine.ts` — the engine driver that runs in the host's tab: applies transitions, validates player actions, persists every state change to `games.state` via the `update_game` RPC, and owns the 1s deadline ticker (replaces the old server timers).
+- `src/store/roomStore.ts` — Zustand store: subscribes to realtime (`games`, `players` Postgres Changes + Presence channel), fetches initial snapshots, routes actions. Player actions (`player:answer`) are inserted into the `actions` table; the host consumes them. `PublicState` shown to views is **merged at read time**: `games.state` + `players` rows + presence (`online`, `hostOnline`) + `deadlineIn` derived from `deadlineAt`.
+- `src/lib/catalog.ts` — categories + public questions (no `correct` column) fetched once per session for the Setup UI.
+- `shared/protocol.ts` — single source of truth for all types (`PublicState`, `GameState`, `GameConfig`, DB row types). Client only; no server anymore.
+- `supabase/schema.sql` — tables, RLS, RPCs, realtime publication. `supabase/seed.sql` — categories + 156 questions (regenerable, idempotent).
+
+## Supabase rules (critical)
+
+- Tokens: host/player tokens live in the `secrets` table — **no RLS policies, not in the realtime publication**; only `security definer` RPCs read them. Never move secrets into `games`/`players`: realtime sends **all columns** of rows in those tables to subscribers.
+- `questions.correct` is never readable via REST (column-level grants). The host fetches the full bank via `get_questions(code, hostToken)` RPC. The shuffled option order lives in `state.active.options`; the correct index is `active.options.indexOf(bankQuestion.options[bankQuestion.correct])`.
+- All writes to `games`/`players` go through RPCs (`create_game`, `update_game`, `resume_game`, `close_game`, `join_game`, `leave_game`, `set_team`, `get_questions`, `clear_actions`). Direct table writes are revoked for `anon`.
+- RPC exceptions use `raise exception '<mensaje español>'` — the PostgREST `error.message` is shown directly in the UI.
 
 ## Conventions
 
-- No path aliases; use relative imports (`../shared/protocol`, `../src/data/questions`).
-- Socket communication is request/ack based: client uses the `emit()` helper in `src/lib/socket.ts` (8s timeout, resolves an `Ack` with `ok`/`error`). Server handlers must call `callback` with an `Ack`-shaped object. Server broadcasts authoritative `PublicState` on the `state` event; client never derives game state locally.
-- In dev, the client connects through the Vite proxy (`/socket.io` → `localhost:3001`), so the server port is fixed unless `vite.config.ts` is updated too.
-- Styling is Tailwind v4 via the Vite plugin (no config file); theme tokens and custom colors are defined with `@theme` in `src/index.css`.
+- No path aliases; use relative imports (`../shared/protocol`).
 - `erasableSyntaxOnly` is on in all tsconfigs: no enums or parameter properties; use plain types/objects.
+- Styling is Tailwind v4 via the Vite plugin (no config file); theme tokens and custom colors live under `@theme` in `src/index.css`.
+- Reconnection credentials: host in **sessionStorage** (`preguntados-host`), player in **localStorage** (`preguntados-player`); settings under `preguntados-ajustes`.
+- If the host refreshes mid-spin, `pending` is lost (never persisted): `repairResumedState` resets `categoryId` so the host can re-spin.
+- Hosting: static site on Netlify (`netlify.toml`: SPA redirect `/*` → `/index.html`). The QR encodes `window.location.origin`, so it works on any domain without LAN tricks.

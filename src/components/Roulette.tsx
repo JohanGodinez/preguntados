@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { motion } from 'framer-motion'
-import type { Category } from '../data/questions'
+import type { Category } from '../../shared/protocol'
 import { sounds } from '../lib/sound'
 
 const SIZE = 300

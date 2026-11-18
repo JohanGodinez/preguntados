@@ -4,6 +4,23 @@ export type Phase = 'lobby' | 'playing' | 'finished'
 export type Stage = 'spin' | 'question' | 'reveal'
 export type Result = 'correct' | 'wrong' | 'timeout'
 
+export type Category = {
+  id: string
+  name: string
+  color: string
+}
+
+export type Question = {
+  id: string
+  categoryId: string
+  text: string
+  options: [string, string, string, string]
+  correct: 0 | 1 | 2 | 3
+}
+
+/** Pregunta sin la respuesta correcta: lo único que ve un cliente. */
+export type PublicBankQuestion = Omit<Question, 'correct'>
+
 export type GameConfig = {
   teams: string[]
   totalRounds: number
@@ -46,14 +63,39 @@ export type PublicState = {
   hostOnline: boolean
 }
 
-export type Ack =
-  | { ok: true; [key: string]: unknown }
-  | { ok: false; error: string }
-
-export type CreateRoomPayload = GameConfig
+/**
+ * Estado del juego tal como se guarda en `games.state` (jsonb) y como
+ * lo maneja el motor del host. Los datos presentes por realtime
+ * (players, hostOnline) y el deadline relativo se agregan al vuelo.
+ */
+export type GameState = Omit<PublicState, 'code' | 'players' | 'hostOnline' | 'deadlineIn'> & {
+  deadlineAt: number | null
+  usedIds: string[]
+}
 
 export type HostCredentials = { code: string; hostToken: string }
 export type PlayerCredentials = { code: string; token: string }
 
-export const ROOM_CLOSED = 'room:closed'
-export const STATE_EVENT = 'state'
+/** Fila de la tabla `players` tal como llega por realtime/REST. */
+export type PlayerRow = {
+  game_code: string
+  id: string
+  name: string
+  team_index: number | null
+}
+
+/** Fila de la tabla `actions` (INSERT por realtime). */
+export type ActionRow = {
+  id: number
+  game_code: string
+  player_id: string
+  type: string
+  payload: unknown
+}
+
+/** Tipos de acción que un jugador puede enviar al host. */
+export const PLAYER_ACTIONS = {
+  ANSWER: 'answer',
+} as const
+
+export const GAME_CLOSED = 'game:closed'

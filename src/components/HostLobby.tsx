@@ -5,22 +5,16 @@ import { useRoomStore } from '../store/roomStore'
 
 type Props = {
   state: PublicState
-  lanIps: string[]
 }
 
-const joinBase = (lanIps: string[]) => {
-  const { protocol, hostname, port } = window.location
-  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1'
-  const host = isLocal && lanIps[0] ? lanIps[0] : hostname
-  return `${protocol}//${host}${port ? `:${port}` : ''}`
-}
+const joinUrl = (code: string) => `${window.location.origin}/unirse?c=${code}`
 
-export function HostLobby({ state, lanIps }: Props) {
+export function HostLobby({ state }: Props) {
   const act = useRoomStore((s) => s.act)
   const closeRoom = useRoomStore((s) => s.closeRoom)
   const error = useRoomStore((s) => s.error)
 
-  const joinUrl = `${joinBase(lanIps)}/unirse?c=${state.code}`
+  const url = joinUrl(state.code)
   const unassigned = state.players.filter((p) => p.teamIndex === null)
   const teamsReady = state.config.teams.every((_, i) => state.players.some((p) => p.teamIndex === i))
 
@@ -42,13 +36,13 @@ export function HostLobby({ state, lanIps }: Props) {
           className="flex flex-col items-center gap-4 rounded-[22px] border border-line bg-ink-2/85 p-6"
         >
           <div className="rounded-2xl bg-paper p-3">
-            <QRCodeSVG value={joinUrl} size={200} bgColor="#f6f1ff" fgColor="#09071a" level="M" />
+            <QRCodeSVG value={url} size={200} bgColor="#f6f1ff" fgColor="#09071a" level="M" />
           </div>
           <div className="text-center">
             <p className="m-0 text-xs font-bold tracking-[0.25em] text-muted uppercase">Código</p>
             <p className="m-0 font-display text-5xl tracking-[0.15em] text-yellow">{state.code}</p>
           </div>
-          <p className="m-0 max-w-55 text-center text-sm break-all text-muted">{joinUrl}</p>
+          <p className="m-0 max-w-55 text-center text-sm break-all text-muted">{url}</p>
         </motion.div>
 
         <div className="grid grid-cols-1 gap-3 self-start sm:grid-cols-2">

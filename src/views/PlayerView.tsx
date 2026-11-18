@@ -22,7 +22,7 @@ export function PlayerView() {
     enter('player')
   }, [enter, leaveRoom, initialCode])
 
-  if (!connected) return <Status text="Conectando con el servidor…" />
+  if (!connected) return <Status text={error ?? 'Conectando con el servidor…'} />
   if (resuming) return <Status text="Entrando a la sala…" />
 
   const me = state?.players.find((p) => p.id === playerId) ?? null

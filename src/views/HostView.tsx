@@ -10,7 +10,6 @@ import { useRoomStore } from '../store/roomStore'
 export function HostView() {
   const enter = useRoomStore((s) => s.enter)
   const state = useRoomStore((s) => s.state)
-  const lanIps = useRoomStore((s) => s.lanIps)
   const resuming = useRoomStore((s) => s.resuming)
   const connected = useRoomStore((s) => s.connected)
   const error = useRoomStore((s) => s.error)
@@ -29,7 +28,7 @@ export function HostView() {
   }
 
   if (!connected) {
-    return <Status text="Conectando con el servidor…" />
+    return <Status text={error ?? 'Conectando con el servidor…'} />
   }
   if (resuming) {
     return <Status text="Recuperando tu sala…" />
@@ -43,7 +42,7 @@ export function HostView() {
     )
   }
   if (state.phase === 'lobby') {
-    return <HostLobby state={state} lanIps={lanIps} />
+    return <HostLobby state={state} />
   }
   if (state.phase === 'playing') {
     return <HostGame state={state} />

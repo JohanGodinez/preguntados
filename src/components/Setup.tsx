@@ -1,15 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { categories, questions } from '../data/questions'
+import { useCatalog } from '../lib/catalog'
 import { sounds } from '../lib/sound'
 import type { GameConfig } from '../../shared/protocol'
 
 const MIN_TEAMS = 2
 const MAX_TEAMS = 6
 const TIMER_OPTIONS = [0, 10, 15, 20] as const
-
-const getMaxRounds = (categoryIds: string[]) =>
-  questions.filter((q) => categoryIds.includes(q.categoryId)).length
 
 const panel = 'rounded-[22px] border border-line bg-linear-to-b from-ink-3/90 to-ink-2/90 p-6'
 
@@ -32,20 +29,35 @@ type Props = {
 }
 
 export function Setup({ busy, onSubmit }: Props) {
+  const catalogCategories = useCatalog((s) => s.categories)
+  const catalogQuestions = useCatalog((s) => s.questions)
+  const catalogError = useCatalog((s) => s.error)
+  const loadCatalog = useCatalog((s) => s.load)
   const [teams, setTeams] = useState<string[]>(['', ''])
-  const [categoryIds, setCategoryIds] = useState<string[]>(categories.map((c) => c.id))
+  const [excludedIds, setExcludedIds] = useState<string[]>([])
   const [rounds, setRounds] = useState(10)
   const [timerSeconds, setTimerSeconds] = useState<number>(15)
 
+  useEffect(() => {
+    void loadCatalog()
+  }, [loadCatalog])
+
+  const categoryIds = catalogCategories
+    .map((c) => c.id)
+    .filter((id) => !excludedIds.includes(id))
+
+  const getMaxRounds = (ids: string[]) =>
+    catalogQuestions.filter((q) => ids.includes(q.categoryId)).length
+
   const maxRounds = getMaxRounds(categoryIds)
   const effectiveRounds = Math.min(rounds, maxRounds)
-  const canStart = categoryIds.length > 0 && maxRounds > 0
+  const canStart = categoryIds.length > 0 && maxRounds > 0 && catalogCategories.length > 0
 
   const updateTeam = (index: number, value: string) =>
     setTeams((list) => list.map((t, i) => (i === index ? value : t)))
 
   const toggleCategory = (id: string) =>
-    setCategoryIds((list) =>
+    setExcludedIds((list) =>
       list.includes(id) ? list.filter((c) => c !== id) : [...list, id],
     )
 
@@ -70,7 +82,13 @@ export function Setup({ busy, onSubmit }: Props) {
         </h1>
       </motion.header>
 
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+      {!catalogCategories.length ? (
+        <p className="pt-10 text-center text-sm font-bold tracking-[0.2em] text-muted uppercase">
+          {catalogError ?? 'Cargando preguntas…'}
+        </p>
+      ) : null}
+
+      <div className={`grid grid-cols-1 gap-5 md:grid-cols-2 ${catalogCategories.length ? '' : 'hidden'}`}>
         <motion.section {...riseIn(0)} className={panel}>
           <h2 className="mb-4.5 flex items-center gap-3 font-display text-lg font-normal tracking-[0.04em] uppercase">
             <span className="grid size-9 -rotate-6 place-items-center rounded-[10px] bg-yellow text-sm text-ink">01</span>
@@ -163,7 +181,7 @@ export function Setup({ busy, onSubmit }: Props) {
             Categorías de la ruleta
           </h2>
           <div className="flex flex-wrap gap-2.5">
-            {categories.map((c) => {
+            {catalogCategories.map((c) => {
               const on = categoryIds.includes(c.id)
               return (
                 <motion.button

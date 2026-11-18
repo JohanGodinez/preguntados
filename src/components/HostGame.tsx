@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { categories } from '../data/questions'
+import { useCatalog } from '../lib/catalog'
 import type { PublicState } from '../../shared/protocol'
 import { sounds } from '../lib/sound'
 import { useRoomStore } from '../store/roomStore'
@@ -13,12 +13,13 @@ type Props = {
 
 export function HostGame({ state }: Props) {
   const act = useRoomStore((s) => s.act)
+  const catalogCategories = useCatalog((s) => s.categories)
   const { config, turnTeam, round, suddenDeath, tiedTeams, stage, active, categoryId, result, selected, correctIndex } = state
 
   const teamName = config.teams[turnTeam] ?? ''
   const isLastRound = !suddenDeath && round >= config.totalRounds
-  const wheelCategories = categories.filter((c) => state.wheelCategoryIds.includes(c.id))
-  const activeCategory = categories.find((c) => c.id === active?.categoryId)
+  const wheelCategories = catalogCategories.filter((c) => state.wheelCategoryIds.includes(c.id))
+  const activeCategory = catalogCategories.find((c) => c.id === active?.categoryId)
   const endsGame = suddenDeath ? result === 'correct' : isLastRound || state.wheelCategoryIds.length === 0
 
   return (

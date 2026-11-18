@@ -1,0 +1,9 @@
+[build]
+  command = "pnpm build"
+  publish = "dist"
+
+# SPA: todas las rutas sirven index.html (/, /host, /unirse?c=...)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
