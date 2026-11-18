@@ -19,7 +19,8 @@ const check = (name, ok, detail = '') => {
 const cats = await sb.from('categories').select('id,name,color').order('id')
 check('categories legible (anon)', !cats.error && cats.data?.length === 6, cats.error?.message ?? `${cats.data?.length} categorías`)
 const qs = await sb.from('questions').select('id,text,options,correct')
-check('questions SIN correct (column grants)', qs.error?.code === 'PGRST204' || (qs.error && /correct/.test(qs.error.message)), qs.error?.message ?? 'NO filtró la columna correct')
+// `correct` debe estar oculta: permission denied / error de columna es el comportamiento deseado.
+check('questions SIN correct (column grants)', !!qs.error && /correct|permission/i.test(qs.error.message), qs.error?.message ?? 'NO filtró la columna correct')
 const qs2 = await sb.from('questions').select('id,category_id,text,options').limit(1)
 check('questions legible sin correct', !qs2.error && qs2.data?.length === 1, qs2.error?.message ?? '')
 const optsOk = Array.isArray(qs2.data?.[0]?.options) && qs2.data[0].options.length === 4
