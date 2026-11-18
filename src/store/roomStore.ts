@@ -213,6 +213,9 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
       }
       const bank = await loadBank(creds.code, creds.hostToken)
       if (!bank) return set({ state: null, resuming: false })
+      // Limpia suscripciones previas ANTES de crear el engine,
+      // porque teardownRoom() anula `engine`.
+      teardownRoom()
       const fixed = repairResumedState(data as GameState)
       engine = new HostEngine({
         db: client,
@@ -226,7 +229,6 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
         },
         onError: (message) => set({ error: message }),
       })
-      teardownRoom()
       subscribeRoom(creds.code, 'host', 'host')
       await fetchRoomSnapshot(creds.code)
       set({ resuming: false, error: null })
@@ -255,7 +257,14 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
       set({ error: error?.message ?? 'No se pudieron cargar las preguntas' })
       return null
     }
-    return data as Question[]
+    // PostgREST devuelve snake_case; el protocolo usa camelCase.
+    return (data as Array<Record<string, unknown>>).map((q) => ({
+      id: q.id as string,
+      categoryId: q.category_id as string,
+      text: q.text as string,
+      options: q.options as string[] as Question['options'],
+      correct: q.correct as Question['correct'],
+    }))
   }
 
   const joinWithToken = async (
