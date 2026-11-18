@@ -158,7 +158,7 @@ function PlayerGame({ state, myTeam }: { state: PublicState; myTeam: number | nu
 
   let caption = ''
   if (stage === 'spin') caption = categoryId ? 'Girando la ruleta…' : 'El host va a girar la ruleta'
-  if (stage === 'question') caption = isMyTurn ? '¡Es tu turno! Responde ya' : `Responde ${turnName}`
+  if (stage === 'question') caption = isMyTurn ? '¡Es tu turno! Responde ya' : `Esperando la respuesta de ${turnName}…`
   if (stage === 'reveal') caption = 'Esperando al host para seguir'
 
   return (

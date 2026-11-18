@@ -84,9 +84,19 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
     const hostOnline = Object.values(presence).some((entries) =>
       entries.some((e) => e.role === 'host'),
     )
+    // La pregunta solo se ve en el equipo en turno (y en el host, que no
+    // tiene playerId); el resto ve "esperando" sin el texto ni las opciones.
+    const myId = get().playerId
+    const me = (myId ? playersRows.find((p) => p.id === myId) : undefined) ?? null
+    const hiddenQuestion =
+      gameRaw.stage === 'question' &&
+      gameRaw.active !== null &&
+      me !== null &&
+      me.team_index !== gameRaw.turnTeam
+    const visible: GameState = hiddenQuestion ? { ...gameRaw, active: null } : gameRaw
     const state: PublicState = {
       code: currentCode,
-      ...gameRaw,
+      ...visible,
       players: playersRows.map((p) => ({
         id: p.id,
         name: p.name,
@@ -95,7 +105,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
       })),
       hostOnline,
       deadlineIn:
-        gameRaw.deadlineAt !== null ? Math.max(0, gameRaw.deadlineAt - Date.now()) : null,
+        visible.deadlineAt !== null ? Math.max(0, visible.deadlineAt - Date.now()) : null,
     }
     set({ state })
   }

@@ -184,13 +184,16 @@ export class HostEngine {
   // ---------------------------------------------------------
 
   private resolve(index: number | null) {
+    const correct = this.pendingCorrect()
     this.state = {
       ...this.state,
       deadlineAt: null,
-      result: index === null ? 'timeout' : index === this.pendingCorrect() ? 'correct' : 'wrong',
-      scores: index !== null && index === this.pendingCorrect()
-        ? this.state.scores.map((s, i) => (i === this.state.turnTeam ? s + POINTS_PER_CORRECT : s))
-        : this.state.scores,
+      correctIndex: correct,
+      result: index === null ? 'timeout' : index === correct ? 'correct' : 'wrong',
+      scores:
+        index !== null && correct !== null && index === correct
+          ? this.state.scores.map((s, i) => (i === this.state.turnTeam ? s + POINTS_PER_CORRECT : s))
+          : this.state.scores,
       selected: index,
       stage: 'reveal',
     }
