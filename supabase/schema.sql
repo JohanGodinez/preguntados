@@ -101,13 +101,23 @@ revoke update, delete, insert on public.questions from anon, authenticated;
 
 do $$
 begin
-  -- Limpia entradas previas para poder re-ejecutar el script.
-  delete from pg_publication_tables
-  where pubname = 'supabase_realtime'
-    and schemaname = 'public'
-    and tablename in ('games', 'players', 'actions');
-exception
-  when undefined_object then null;
+  -- Idempotente: saca las tablas de la publication si ya estaban,
+  -- y luego las vuelve a agregar.
+  if exists (select 1 from pg_publication_tables
+             where pubname = 'supabase_realtime'
+               and schemaname = 'public' and tablename = 'games') then
+    alter publication supabase_realtime drop table public.games;
+  end if;
+  if exists (select 1 from pg_publication_tables
+             where pubname = 'supabase_realtime'
+               and schemaname = 'public' and tablename = 'players') then
+    alter publication supabase_realtime drop table public.players;
+  end if;
+  if exists (select 1 from pg_publication_tables
+             where pubname = 'supabase_realtime'
+               and schemaname = 'public' and tablename = 'actions') then
+    alter publication supabase_realtime drop table public.actions;
+  end if;
 end $$;
 
 alter publication supabase_realtime add table public.games;
