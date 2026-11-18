@@ -5,6 +5,7 @@ import { GameOver } from '../components/GameOver'
 import { HostGame } from '../components/HostGame'
 import { HostLobby } from '../components/HostLobby'
 import { Setup } from '../components/Setup'
+import { useCatalog } from '../lib/catalog'
 import { useRoomStore } from '../store/roomStore'
 
 export function HostView() {
@@ -15,11 +16,15 @@ export function HostView() {
   const error = useRoomStore((s) => s.error)
   const createRoom = useRoomStore((s) => s.createRoom)
   const closeRoom = useRoomStore((s) => s.closeRoom)
+  const loadCatalog = useCatalog((s) => s.load)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     enter('host')
-  }, [enter])
+    // El host puede retomar una sala sin pasar por Setup: necesita
+    // el catálogo para pintar la ruleta y las categorías.
+    void loadCatalog()
+  }, [enter, loadCatalog])
 
   const handleCreate = async (config: GameConfig) => {
     setBusy(true)

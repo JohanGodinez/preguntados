@@ -13,8 +13,19 @@ type Props = {
 
 export function HostGame({ state }: Props) {
   const act = useRoomStore((s) => s.act)
+  const error = useRoomStore((s) => s.error)
+  const catalogLoaded = useCatalog((s) => s.loaded)
+  const catalogError = useCatalog((s) => s.error)
   const catalogCategories = useCatalog((s) => s.categories)
   const { config, turnTeam, round, suddenDeath, tiedTeams, stage, active, categoryId, result, selected, correctIndex } = state
+
+  if (!catalogLoaded) {
+    return (
+      <p className="pt-16 text-center text-sm font-bold tracking-[0.2em] text-muted uppercase">
+        {catalogError ?? 'Cargando categorías…'}
+      </p>
+    )
+  }
 
   const teamName = config.teams[turnTeam] ?? ''
   const isLastRound = !suddenDeath && round >= config.totalRounds
@@ -24,6 +35,7 @@ export function HostGame({ state }: Props) {
 
   return (
     <div className="flex flex-col gap-5.5">
+      {error ? <p className="m-0 text-sm font-bold text-red">{error}</p> : null}
       <motion.header
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
