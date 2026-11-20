@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { motion } from 'framer-motion'
 import type { PublicState } from '../../shared/protocol'
 import { GameOver } from '../components/GameOver'
@@ -31,7 +31,7 @@ export function PlayerView() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       <header className="flex items-center justify-between gap-3">
         <span className="font-display text-sm tracking-[0.15em] text-muted">SALA {state.code}</span>
         <button
@@ -70,6 +70,13 @@ function JoinForm({ initialCode }: { initialCode: string }) {
   const error = useRoomStore((s) => s.error)
   const [code, setCode] = useState(initialCode)
   const [busy, setBusy] = useState(false)
+  const autoJoined = useRef(false)
+
+  useEffect(() => {
+    if (!initialCode || autoJoined.current) return
+    autoJoined.current = true
+    void joinRoom(initialCode)
+  }, [initialCode, joinRoom])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -84,11 +91,10 @@ function JoinForm({ initialCode }: { initialCode: string }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       onSubmit={submit}
-      className="flex flex-col gap-6 pt-6"
+      className="flex flex-col gap-5 sm:gap-6"
     >
       <div className="flex flex-col gap-2">
-        <p className="m-0 text-xs font-bold tracking-[0.3em] text-cyan uppercase">Unirse a una sala</p>
-        <h1 className="m-0 font-display text-5xl leading-none">Preguntados</h1>
+        <h1 className="m-0 font-display text-[clamp(38px,11vw,56px)] leading-none">Preguntados</h1>
       </div>
 
       <label className="flex flex-col gap-2">
@@ -98,17 +104,24 @@ function JoinForm({ initialCode }: { initialCode: string }) {
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           maxLength={5}
           autoCapitalize="characters"
+          autoCorrect="off"
+          autoComplete="off"
+          spellCheck={false}
+          inputMode="text"
+          enterKeyHint="go"
           placeholder="ABCDE"
           className="rounded-xl border border-line bg-ink-2/85 px-4 py-4 text-center font-display text-3xl tracking-[0.2em] text-yellow uppercase outline-none focus:border-cyan"
         />
       </label>
+
+      <p className="m-0 text-xs text-muted">Escanea el QR de la pantalla o escribe el código de 5 letras.</p>
 
       {error ? <p className="m-0 text-sm font-bold text-red">{error}</p> : null}
 
       <button
         type="submit"
         disabled={busy || !code.trim()}
-        className="cursor-pointer rounded-full bg-linear-to-br from-yellow to-pink px-8 py-4 font-display text-lg text-ink uppercase shadow-[0_10px_30px_-8px_rgb(255_61_127/0.7)] disabled:cursor-not-allowed disabled:opacity-40"
+        className="min-h-14 w-full cursor-pointer rounded-full bg-linear-to-br from-yellow to-pink px-8 py-4 font-display text-lg text-ink uppercase shadow-[0_10px_30px_-8px_rgb(255_61_127/0.7)] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
       >
         {busy ? 'Entrando…' : 'Entrar'}
       </button>
@@ -120,12 +133,12 @@ function TeamPicker({ state, myTeam }: { state: PublicState; myTeam: number | nu
   const act = useRoomStore((s) => s.act)
 
   return (
-    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-5">
+    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <p className="m-0 text-xs font-bold tracking-[0.3em] text-cyan uppercase">Elige tu equipo</p>
+        <h1 className="m-0 font-display text-2xl">Elige tu equipo</h1>
         <p className="m-0 text-sm text-muted">Esperando a que el host inicie la partida.</p>
       </div>
-      <div className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-2">
         {state.config.teams.map((name, i) => {
           const selected = myTeam === i
           const count = state.players.filter((p) => p.teamIndex === i).length
@@ -134,13 +147,32 @@ function TeamPicker({ state, myTeam }: { state: PublicState; myTeam: number | nu
               key={i}
               whileTap={{ scale: 0.98 }}
               onClick={() => void act('player:team', { teamIndex: i })}
+              aria-pressed={selected}
               style={{ ['--team' as string]: `var(--team-${i % 6})`, background: selected ? 'var(--team)' : undefined }}
-              className={`flex cursor-pointer items-center justify-between rounded-2xl border-2 px-5 py-5 text-left transition-colors ${
+              className={`flex min-h-16 cursor-pointer items-center justify-between rounded-2xl border-2 px-5 py-4 text-left transition-colors ${
                 selected ? 'border-(--team) text-ink' : 'border-line bg-ink-2/85 text-paper hover:border-(--team)'
               }`}
             >
-              <span className="font-display text-xl">{name}</span>
-              <span className="text-sm font-bold opacity-80">{count} {count === 1 ? 'jugador' : 'jugadores'}</span>
+              <span className="flex items-center gap-2">
+                {selected ? (
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="size-5 shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m5 13 4 4L19 7" />
+                  </svg>
+                ) : null}
+                <span className="font-display text-xl">{name}</span>
+              </span>
+              <span className="text-xs font-bold opacity-80">
+                {count} {count === 1 ? 'jugador' : 'jugadores'}
+              </span>
             </motion.button>
           )
         })}
@@ -162,32 +194,42 @@ function PlayerGame({ state, myTeam }: { state: PublicState; myTeam: number | nu
   if (stage === 'reveal') caption = 'Esperando al host para seguir'
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-1">
-        <span className="text-xs font-bold tracking-[0.25em] text-muted uppercase">
-          {suddenDeath ? 'Muerte súbita' : `Ronda ${state.round} de ${config.totalRounds}`}
+    <div className="player-flow flex flex-col gap-3 sm:gap-5">
+      <div
+        className="flex items-center gap-2 text-sm"
+        style={{ ['--team' as string]: `var(--team-${turnTeam % 6})` }}
+      >
+        <span className="font-bold text-muted uppercase">
+          {suddenDeath ? 'Desempate' : `Ronda ${state.round}/${config.totalRounds}`}
         </span>
-        <span
-          className="font-display text-3xl leading-tight text-(--team)"
-          style={{ ['--team' as string]: `var(--team-${turnTeam % 6})` }}
-        >
-          Turno de {turnName}
-        </span>
+        <span className="text-muted/50">·</span>
+        <span className="size-2 shrink-0 rounded-full bg-(--team) shadow-[0_0_8px_var(--team)]" aria-hidden="true" />
+        <span className="truncate font-display text-base text-(--team)">{turnName}</span>
       </div>
 
-      <Scoreboard teams={config.teams} scores={state.scores} activeIndex={turnTeam} eligible={suddenDeath ? tiedTeams : undefined} />
+      <Scoreboard
+        teams={config.teams}
+        scores={state.scores}
+        activeIndex={turnTeam}
+        eligible={suddenDeath ? tiedTeams : undefined}
+        compact
+      />
 
       {benched ? (
         <p className="m-0 text-sm font-bold text-muted">Tu equipo no está en el desempate; mira cómo juegan los demás.</p>
       ) : null}
 
       {stage === 'spin' || !active ? (
-        <div className="flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-line p-6 text-center">
+        <div className="flex min-h-28 items-center justify-center rounded-2xl border border-dashed border-line p-6 text-center sm:min-h-40">
           <p className="m-0 font-display text-xl tracking-[0.05em] text-muted uppercase">{caption}</p>
         </div>
       ) : (
         <>
-          <p className={`m-0 text-center text-sm font-bold tracking-[0.2em] uppercase ${isMyTurn && stage === 'question' ? 'text-yellow' : 'text-muted'}`}>
+          <p
+            className={`player-caption m-0 text-center text-xs font-bold tracking-[0.18em] uppercase ${
+              isMyTurn && stage === 'question' ? 'text-yellow' : 'text-muted max-sm:hidden'
+            }`}
+          >
             {caption}
           </p>
           <QuestionCard

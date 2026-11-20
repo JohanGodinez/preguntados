@@ -82,18 +82,18 @@ export function QuestionCard({ question, deadlineIn, correctIndex, selected, res
   }, [result])
 
   return (
-    <section className="flex w-full flex-col items-center gap-6">
+    <section className="player-stack flex w-full flex-col items-center gap-4 sm:gap-6">
       {timed ? (
-        <div className="flex w-full max-w-140 items-center gap-3.5">
+        <div className="flex w-full max-w-140 items-center gap-3">
           <motion.span
             key={remaining}
             initial={{ scale: 1.3 }}
             animate={{ scale: 1 }}
-            className={`min-w-14 text-center font-display text-4xl leading-none ${urgent ? 'text-red' : 'text-cyan'}`}
+            className={`min-w-11 text-center font-display text-3xl leading-none sm:min-w-14 sm:text-4xl ${urgent ? 'text-red' : 'text-cyan'}`}
           >
             {remaining}
           </motion.span>
-          <div className="h-3 flex-1 overflow-hidden rounded-full bg-paper/10">
+          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-paper/10 sm:h-3">
             <motion.div
               className={`h-full rounded-full ${urgent ? 'bg-linear-to-r from-red to-yellow' : 'bg-linear-to-r from-cyan to-green'}`}
               animate={{ width: `${progress}%` }}
@@ -106,12 +106,12 @@ export function QuestionCard({ question, deadlineIn, correctIndex, selected, res
       <motion.h2
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        className="m-0 max-w-200 text-center text-[clamp(22px,3.4vw,34px)] leading-tight font-bold"
+        className="player-question m-0 max-w-200 text-center text-[clamp(20px,5.2vw,30px)] leading-tight font-bold md:text-[clamp(22px,3.4vw,34px)]"
       >
         {question.text}
       </motion.h2>
 
-      <div className="grid w-full grid-cols-1 gap-3.5 md:grid-cols-2">
+      <div className="player-options grid w-full grid-cols-1 gap-2.5 sm:gap-3.5 md:grid-cols-2">
         {question.options.map((option, i) => {
           const isCorrect = i === correctIndex
           const isSelected = i === selected
@@ -131,13 +131,12 @@ export function QuestionCard({ question, deadlineIn, correctIndex, selected, res
                 scale: state === 'correct' ? [1, 1.03, 1] : 1,
               }}
               transition={{ delay: i * 0.05, duration: 0.3, ease: 'easeOut' }}
-              whileHover={interactive ? { y: -2 } : undefined}
-              whileTap={interactive ? { scale: 0.98 } : undefined}
+              whileTap={interactive ? { scale: 0.97 } : undefined}
               disabled={!interactive}
               onClick={() => onAnswer?.(i)}
-              className={`flex items-center gap-3.5 rounded-2xl border px-5 py-4.5 text-left text-lg font-semibold transition-colors duration-300 ${optionClass(state)} ${interactive ? 'cursor-pointer' : 'cursor-default'}`}
+              className={`player-option flex min-h-14 items-center gap-3 rounded-2xl border px-4 py-3.5 text-left text-base font-semibold transition-colors duration-300 sm:gap-3.5 sm:px-5 sm:py-4.5 sm:text-lg ${optionClass(state)} ${interactive ? 'cursor-pointer' : 'cursor-default'}`}
             >
-              <span className={`grid size-9.5 shrink-0 place-items-center rounded-[10px] font-display text-[15px] ${letterClass(state)}`}>
+              <span className={`player-option-letter grid size-8.5 shrink-0 place-items-center rounded-[10px] font-display text-sm sm:size-9.5 sm:text-[15px] ${letterClass(state)}`}>
                 {LETTERS[i]}
               </span>
               <span>{option}</span>
@@ -150,7 +149,8 @@ export function QuestionCard({ question, deadlineIn, correctIndex, selected, res
         <motion.p
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className={`m-0 font-display text-[22px] tracking-[0.04em] uppercase ${verdictColor(result)}`}
+          className={`m-0 font-display text-lg tracking-[0.04em] uppercase sm:text-[22px] ${verdictColor(result)}`}
+          aria-live="polite"
         >
           {result === 'correct' ? `¡Correcto! +${POINTS_PER_CORRECT} puntos` : null}
           {result === 'wrong' ? 'Respuesta incorrecta' : null}

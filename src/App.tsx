@@ -44,8 +44,8 @@ function App() {
   else if (path.startsWith('/unirse')) view = <PlayerView />
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-270 flex-col px-5 pt-8 pb-16">
-      <div className="mb-4 flex justify-end">
+    <main className="mx-auto flex min-h-dvh max-w-270 flex-col px-[max(1.25rem,var(--sal))] pt-[max(1.5rem,var(--sat))] pb-[max(1.25rem,var(--sab))] sm:pt-8 sm:pb-16">
+      <div className="mb-2 flex justify-end sm:mb-4">
         <SoundToggle />
       </div>
       {view}
