@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { CategoryIcon } from './CategoryIcon'
 import { useCatalog } from '../lib/catalog'
 import { sounds } from '../lib/sound'
 import type { GameConfig } from '../../shared/protocol'
@@ -25,7 +26,7 @@ const riseIn = (delay: number) => ({
 
 type Props = {
   busy: boolean
-  onSubmit: (config: GameConfig) => void
+  onSubmit: (config: GameConfig, playerName: string) => void
 }
 
 export function Setup({ busy, onSubmit }: Props) {
@@ -37,6 +38,7 @@ export function Setup({ busy, onSubmit }: Props) {
   const [excludedIds, setExcludedIds] = useState<string[]>([])
   const [rounds, setRounds] = useState(10)
   const [timerSeconds, setTimerSeconds] = useState<number>(15)
+  const [playerName, setPlayerName] = useState('')
 
   useEffect(() => {
     void loadCatalog()
@@ -63,20 +65,20 @@ export function Setup({ busy, onSubmit }: Props) {
 
   const handleStart = () => {
     sounds.start()
-    onSubmit({
-      teams: teams.map((t, i) => t.trim() || `Equipo ${i + 1}`),
-      totalRounds: effectiveRounds,
-      categoryIds,
-      timerSeconds,
-    })
+    onSubmit(
+      {
+        teams: teams.map((t, i) => t.trim() || `Equipo ${i + 1}`),
+        totalRounds: effectiveRounds,
+        categoryIds,
+        timerSeconds,
+      },
+      playerName.trim() || 'Jugador 1',
+    )
   }
 
   return (
     <div className="flex flex-col">
       <motion.header {...riseIn(0)} className="py-6 pb-9">
-        <p className="mb-1.5 text-[13px] font-bold tracking-[0.32em] text-cyan uppercase">
-          Juego de trivia por equipos
-        </p>
         <h1 className="m-0 font-display text-[clamp(56px,11vw,128px)] leading-[0.9] [text-shadow:4px_4px_0_var(--color-pink),-2px_-2px_0_var(--color-cyan)]">
           Pregun<span className="text-yellow [text-shadow:4px_4px_0_var(--color-pink)]">tados</span>
         </h1>
@@ -196,10 +198,7 @@ export function Setup({ busy, onSubmit }: Props) {
                   }}
                   onClick={() => toggleCategory(c.id)}
                 >
-                  <span
-                    className="size-2.5 rounded-full bg-(--cat) shadow-[0_0_10px_var(--cat)] transition-opacity"
-                    style={{ opacity: on ? 1 : 0.35 }}
-                  />
+                  <CategoryIcon id={c.id} className="size-4.5" strokeWidth={2.4} />
                   {c.name}
                 </motion.button>
               )
@@ -209,15 +208,27 @@ export function Setup({ busy, onSubmit }: Props) {
       </div>
 
       <motion.footer {...riseIn(0.3)} className="mt-8 flex flex-wrap items-center justify-between gap-5">
-        <motion.button
-          whileHover={canStart ? { y: -2 } : undefined}
-          whileTap={canStart ? { scale: 0.97 } : undefined}
-          onClick={handleStart}
-          disabled={!canStart || busy}
-          className="cursor-pointer rounded-full bg-linear-to-br from-yellow to-pink px-10 py-4.5 font-display text-lg text-ink uppercase shadow-[0_10px_30px_-8px_rgb(255_61_127/0.7)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {busy ? 'Creando sala…' : 'Crear sala'}
-        </motion.button>
+        <div className="flex flex-wrap items-center gap-4">
+          <motion.button
+            whileHover={canStart ? { y: -2 } : undefined}
+            whileTap={canStart ? { scale: 0.97 } : undefined}
+            onClick={handleStart}
+            disabled={!canStart || busy}
+            className="cursor-pointer rounded-full bg-linear-to-br from-yellow to-pink px-10 py-4.5 font-display text-lg text-ink uppercase shadow-[0_10px_30px_-8px_rgb(255_61_127/0.7)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? 'Creando sala…' : 'Crear sala'}
+          </motion.button>
+          <label className="flex items-center gap-2.5">
+            <span className="text-xs font-bold tracking-[0.2em] text-muted uppercase">Tu nombre</span>
+            <input
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              maxLength={14}
+              placeholder="Jugador 1"
+              className="w-40 rounded-xl border border-line bg-ink/60 px-3.5 py-2.5 font-semibold outline-none focus:border-cyan"
+            />
+          </label>
+        </div>
         <span className="text-sm text-muted">
           {teams.length} equipos · {effectiveRounds} rondas · {categoryIds.length} categorías
         </span>

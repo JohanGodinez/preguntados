@@ -56,10 +56,14 @@ export type PublicState = {
   categoryId: string | null
   active: PublicQuestion | null
   correctIndex: number | null
-  selected: number | null
-  result: Result | null
+  /** Respuesta elegida por cada equipo (índice de opción), alineada con config.teams. */
+  answers: (number | null)[]
+  /** Resultado de cada equipo, alineado con config.teams. */
+  results: (Result | null)[]
   wheelCategoryIds: string[]
   deadlineIn: number | null
+  /** Segundos hasta que el reveal avance solo (null fuera del reveal). */
+  advanceIn: number | null
   hostOnline: boolean
 }
 
@@ -68,8 +72,9 @@ export type PublicState = {
  * lo maneja el motor del host. Los datos presentes por realtime
  * (players, hostOnline) y el deadline relativo se agregan al vuelo.
  */
-export type GameState = Omit<PublicState, 'code' | 'players' | 'hostOnline' | 'deadlineIn'> & {
+export type GameState = Omit<PublicState, 'code' | 'players' | 'hostOnline' | 'deadlineIn' | 'advanceIn'> & {
   deadlineAt: number | null
+  advanceAt: number | null
   usedIds: string[]
 }
 
@@ -96,6 +101,11 @@ export type ActionRow = {
 /** Tipos de acción que un jugador puede enviar al host. */
 export const PLAYER_ACTIONS = {
   ANSWER: 'answer',
+  SPIN: 'spin',
+  NEXT: 'next',
 } as const
+
+/** Milisegundos que el reveal queda en pantalla antes de avanzar solo. */
+export const REVEAL_MS = 6000
 
 export const GAME_CLOSED = 'game:closed'

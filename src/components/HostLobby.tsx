@@ -26,7 +26,7 @@ export function HostLobby({ state }: Props) {
         className="flex flex-col items-start gap-2"
       >
         <p className="text-xs font-bold tracking-[0.3em] text-cyan uppercase">Sala de espera</p>
-        <h1 className="m-0 font-display text-[clamp(40px,7vw,72px)] leading-none">Únete desde tu celular</h1>
+        <h1 className="m-0 font-display text-[clamp(40px,7vw,72px)] leading-none">Todos desde su celular</h1>
       </motion.header>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[auto_1fr]">
@@ -55,7 +55,7 @@ export function HostLobby({ state }: Props) {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 style={{ ['--team' as string]: `var(--team-${i % 6})` }}
-                className="flex min-h-32 flex-col gap-2 rounded-2xl border border-line border-t-4 border-t-(--team) bg-ink-2/85 p-4"
+                className="flex min-h-32 flex-col gap-2 rounded-2xl border border-(--team) bg-ink-2/85 p-4"
               >
                 <div className="flex items-baseline justify-between">
                   <span className="truncate font-display text-lg text-(--team)">{name}</span>

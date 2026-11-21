@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import type { Category } from '../../shared/protocol'
+import { CategoryIcon } from './CategoryIcon'
 import { sounds } from '../lib/sound'
 
 const SIZE = 300
@@ -12,8 +13,8 @@ const FULL_TURNS = 6
 type Props = {
   categories: Category[]
   target: string | null
-  onSpin: () => void
-  onFinish: (categoryId: string) => void
+  onSpin?: () => void
+  spinLabel?: string
 }
 
 const polar = (angle: number, r: number) => {
@@ -28,15 +29,24 @@ const slicePath = (start: number, end: number) => {
   return `M ${CENTER} ${CENTER} L ${a.x} ${a.y} A ${RADIUS} ${RADIUS} 0 ${large} 1 ${b.x} ${b.y} Z`
 }
 
-export function Roulette({ categories, target, onSpin, onFinish }: Props) {
-  const slice = 360 / categories.length
+export function Roulette({ categories, target, onSpin, spinLabel }: Props) {
+  const slice = categories.length > 0 ? 360 / categories.length : 0
   const targetIndex = categories.findIndex((c) => c.id === target)
   const landing = targetIndex >= 0 ? (360 - (targetIndex * slice + slice / 2)) % 360 : 0
   const rotation = targetIndex >= 0 ? FULL_TURNS * 360 + landing : 0
+  const landed = targetIndex >= 0 ? categories[targetIndex] : null
 
   useEffect(() => {
     if (targetIndex >= 0) sounds.spin(SPIN_SECONDS)
   }, [targetIndex])
+
+  if (categories.length === 0) {
+    return (
+      <p className="m-0 py-16 text-center text-sm font-bold tracking-[0.2em] text-muted uppercase">
+        Sin categorías disponibles
+      </p>
+    )
+  }
 
   return (
     <div className="relative flex aspect-square w-[min(80vw,360px)] items-center justify-center">
@@ -54,20 +64,15 @@ export function Roulette({ categories, target, onSpin, onFinish }: Props) {
 
       <div className="size-full rounded-full shadow-[0_0_0_8px_var(--color-ink-3),0_0_0_11px_var(--color-yellow),0_30px_60px_-20px_rgb(0_0_0/0.8),0_0_80px_-10px_rgb(255_61_127/0.35)]">
         <motion.div
-          className="size-full will-change-transform"
+          className="relative size-full will-change-transform"
           initial={{ rotate: 0 }}
           animate={{ rotate: rotation }}
           transition={{ duration: SPIN_SECONDS, ease: [0.17, 0.67, 0.12, 0.99] }}
-          onAnimationComplete={() => {
-            if (target) onFinish(target)
-          }}
         >
           <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="size-full rounded-full">
             {categories.map((cat, i) => {
               const start = i * slice
               const end = start + slice
-              const mid = start + slice / 2
-              const label = polar(mid, RADIUS * 0.58)
               return (
                 <g key={cat.id}>
                   {categories.length === 1 ? (
@@ -75,38 +80,53 @@ export function Roulette({ categories, target, onSpin, onFinish }: Props) {
                   ) : (
                     <path d={slicePath(start, end)} fill={cat.color} stroke="#09071a" strokeWidth={3} />
                   )}
-                  <text
-                    x={label.x}
-                    y={label.y}
-                    transform={`rotate(${mid} ${label.x} ${label.y})`}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    className="font-display text-[11px] fill-white tracking-[0.02em]"
-                    stroke="rgb(9 7 26 / 0.5)"
-                    strokeWidth={3}
-                    paintOrder="stroke"
-                  >
-                    {cat.name}
-                  </text>
                 </g>
               )
             })}
             <circle cx={CENTER} cy={CENTER} r={22} className="fill-ink stroke-yellow" strokeWidth={5} />
           </svg>
+
+          {/* Iconos de categoría sobre cada porción: rotan con la rueda
+              pero se dibujan en HTML para escalar y no desbordar. */}
+          <div aria-hidden="true" className="absolute inset-0">
+            {categories.map((cat, i) => {
+              const mid = i * slice + slice / 2
+              const label = polar(mid, RADIUS * 0.58)
+              return (
+                <span
+                  key={cat.id}
+                  title={cat.name}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 text-white [filter:drop-shadow(0_2px_3px_rgb(9_7_26/0.7))]"
+                  style={{ left: `${(label.x / SIZE) * 100}%`, top: `${(label.y / SIZE) * 100}%` }}
+                >
+                  <CategoryIcon id={cat.id} className="size-[clamp(18px,6vw,27px)]" />
+                </span>
+              )
+            })}
+          </div>
         </motion.div>
       </div>
 
-      {target ? null : (
+      {landed ? (
+        <motion.p
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute -bottom-16 m-0 font-display text-lg tracking-[0.06em] uppercase"
+          style={{ color: landed.color }}
+        >
+          {landed.name}
+        </motion.p>
+      ) : onSpin ? (
         <motion.button
           onClick={onSpin}
           whileHover={{ y: -2 }}
           whileTap={{ scale: 0.96 }}
           transition={{ duration: 0.15 }}
-          className="absolute -bottom-20 cursor-pointer rounded-full bg-linear-to-br from-yellow to-pink px-6 py-3 font-display text-[15px] uppercase text-ink shadow-[0_10px_30px_-8px_rgb(255_61_127/0.7)]"
+          className="absolute -bottom-16 cursor-pointer rounded-full bg-linear-to-br from-yellow to-pink px-6 py-3 font-display text-[15px] uppercase text-ink shadow-[0_10px_30px_-8px_rgb(255_61_127/0.7)]"
         >
-          Girar ruleta
+          {spinLabel ?? 'Girar ruleta'}
         </motion.button>
-      )}
+      ) : null}
     </div>
   )
 }

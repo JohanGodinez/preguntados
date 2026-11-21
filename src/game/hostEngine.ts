@@ -5,7 +5,7 @@ import type {
   PlayerRow,
   Question,
 } from '../../shared/protocol'
-import { POINTS_PER_CORRECT } from '../../shared/protocol'
+import { POINTS_PER_CORRECT, REVEAL_MS } from '../../shared/protocol'
 import {
   getWheelCategoryIds,
   leadingTeams,
@@ -14,11 +14,17 @@ import {
   type PickedQuestion,
 } from './engine'
 
+/** Duración de la animación de la ruleta antes de mostrar la pregunta. */
+const SPIN_MS = 4400
+
 /**
- * Motor del juego que corre en el navegador del host.
+ * Motor del juego que corre en la pestaña del creador de la sala.
  * Reemplaza al servidor de socket.io: mantiene el estado en memoria,
  * aplica las transiciones y persiste cada cambio en `games.state`
  * mediante la RPC `update_game`. Los demás clientes lo reciben por realtime.
+ *
+ * Mecánica: ambos equipos responden la misma pregunta al mismo tiempo.
+ * El equipo en turno gira la ruleta; cada equipo suma puntos si acierta.
  */
 export class HostEngine {
   private readonly db: SupabaseClient
@@ -29,6 +35,7 @@ export class HostEngine {
   private pending: PickedQuestion | null = null
   private players: PlayerRow[] = []
   private ticker: number | null = null
+  private spinTimer: number | null = null
   private onState: (state: GameState) => void
   private onError: (message: string) => void
 
@@ -53,6 +60,7 @@ export class HostEngine {
 
   dispose() {
     this.stopTicker()
+    this.clearSpinTimer()
   }
 
   setPlayers(players: PlayerRow[]) {
@@ -64,7 +72,7 @@ export class HostEngine {
   }
 
   // ---------------------------------------------------------
-  // Acciones del host
+  // Acciones del creador
   // ---------------------------------------------------------
 
   async start() {
@@ -87,10 +95,11 @@ export class HostEngine {
       categoryId: null,
       active: null,
       correctIndex: null,
-      selected: null,
-      result: null,
+      answers: this.state.config.teams.map(() => null),
+      results: this.state.config.teams.map(() => null),
       wheelCategoryIds: this.state.config.categoryIds,
       deadlineAt: null,
+      advanceAt: null,
     }
     await this.write()
   }
@@ -115,10 +124,19 @@ export class HostEngine {
     this.pending = picked
     this.state = { ...this.state, categoryId }
     await this.write()
+
+    // La pregunta aparece al terminar la animación, sin depender de
+    // que alguien pulse nada: el creador puede estar jugando.
+    this.clearSpinTimer()
+    this.spinTimer = window.setTimeout(() => {
+      this.spinTimer = null
+      void this.show()
+    }, SPIN_MS)
   }
 
   async show() {
-    if (!this.pending) return this.fail('No hay pregunta lista')
+    if (!this.pending) return
+    if (this.state.stage !== 'spin') return
     const active = this.pending
     this.pending = null
     const ms = this.state.config.timerSeconds * 1000
@@ -127,9 +145,11 @@ export class HostEngine {
       active: toPublicQuestion(active),
       usedIds: [...this.state.usedIds, active.question.id],
       stage: 'question',
-      selected: null,
-      result: null,
+      answers: this.state.config.teams.map(() => null),
+      results: this.state.config.teams.map(() => null),
+      correctIndex: null,
       deadlineAt: ms === 0 ? null : Date.now() + ms,
+      advanceAt: null,
     }
     await this.write()
   }
@@ -143,6 +163,7 @@ export class HostEngine {
 
   async close() {
     this.stopTicker()
+    this.clearSpinTimer()
     const { error } = await this.db.rpc('close_game', {
       p_code: this.code,
       p_host_token: this.hostToken,
@@ -157,8 +178,17 @@ export class HostEngine {
   async processAction(action: ActionRow) {
     if (action.type === 'answer') {
       const payload = (action.payload ?? {}) as { index?: unknown }
-      const index = payload.index
-      await this.answer(action.player_id, index === null ? null : (index as number))
+      const raw = payload.index
+      const index = raw === null || raw === undefined ? null : Number(raw)
+      if (index !== null && (Number.isNaN(index) || index < 0 || index > 3)) {
+        this.fail('Respuesta inválida')
+      } else {
+        await this.answer(action.player_id, index)
+      }
+    } else if (action.type === 'spin') {
+      await this.spinForPlayer(action.player_id)
+    } else if (action.type === 'next') {
+      if (this.state.stage === 'reveal') await this.advance()
     }
     await this.db.rpc('clear_actions', {
       p_code: this.code,
@@ -167,35 +197,62 @@ export class HostEngine {
     })
   }
 
+  private async spinForPlayer(playerId: string) {
+    if (this.state.phase !== 'playing' || this.state.stage !== 'spin') return
+    const team = this.getTeamIndex(playerId)
+    if (team === null) return this.fail('Elegí un equipo antes de girar')
+    if (team !== this.state.turnTeam) return this.fail('No es el turno de tu equipo para girar')
+    await this.spin()
+  }
+
+  /** Equipos que deben responder esta pregunta (en desempate, solo los empatados). */
+  private pendingTeams(): number[] {
+    const all = this.state.config.teams.map((_, i) => i)
+    return this.state.suddenDeath ? this.state.tiedTeams : all
+  }
+
   private async answer(playerId: string, index: number | null) {
     if (this.state.stage !== 'question' || !this.state.active) return this.fail('No hay pregunta activa')
-    if (this.getTeamIndex(playerId) !== this.state.turnTeam) {
-      return this.fail('No es el turno de tu equipo')
+    const team = this.getTeamIndex(playerId)
+    if (team === null) return this.fail('Elegí un equipo antes de responder')
+    if (!this.pendingTeams().includes(team)) {
+      return this.fail('Tu equipo no está en el desempate')
     }
-    if (index !== null && (typeof index !== 'number' || index < 0 || index > 3)) {
-      return this.fail('Respuesta inválida')
+    // Una respuesta por equipo: la primera queda fija.
+    if (this.state.answers[team] !== null) return
+
+    this.state = {
+      ...this.state,
+      answers: this.state.answers.map((a, i) => (i === team ? index : a)),
     }
-    this.resolve(index)
+    if (this.pendingTeams().every((t) => this.state.answers[t] !== null)) {
+      this.resolve()
+    }
     await this.write()
   }
 
   // ---------------------------------------------------------
-  // Transiciones internas (puerto fiel de server/rooms.ts)
+  // Transiciones internas
   // ---------------------------------------------------------
 
-  private resolve(index: number | null) {
+  private resolve() {
     const correct = this.pendingCorrect()
+    const pending = this.pendingTeams()
+    const results = this.state.answers.map((answer, team) => {
+      if (!pending.includes(team)) return null
+      if (answer === null) return 'timeout' as const
+      return answer === correct ? ('correct' as const) : ('wrong' as const)
+    })
     this.state = {
       ...this.state,
       deadlineAt: null,
       correctIndex: correct,
-      result: index === null ? 'timeout' : index === correct ? 'correct' : 'wrong',
-      scores:
-        index !== null && correct !== null && index === correct
-          ? this.state.scores.map((s, i) => (i === this.state.turnTeam ? s + POINTS_PER_CORRECT : s))
-          : this.state.scores,
-      selected: index,
+      results,
+      scores: this.state.scores.map((score, team) =>
+        results[team] === 'correct' ? score + POINTS_PER_CORRECT : score,
+      ),
       stage: 'reveal',
+      advanceAt: Date.now() + REVEAL_MS,
     }
   }
 
@@ -216,15 +273,20 @@ export class HostEngine {
       categoryId: null,
       active: null,
       correctIndex: null,
-      selected: null,
-      result: null,
+      answers: this.state.config.teams.map(() => null),
+      results: this.state.config.teams.map(() => null),
       deadlineAt: null,
+      advanceAt: null,
     }
   }
 
   private async advance() {
+    // Blindaje ante el ticker y el botón "Siguiente" disparando a la vez.
+    if (this.state.stage !== 'reveal') return
     if (this.state.suddenDeath) {
-      if (this.state.result === 'correct') return this.finish()
+      const correctTeams = this.state.tiedTeams.filter((t) => this.state.results[t] === 'correct')
+      if (correctTeams.length === 1) return this.finish()
+      // Ninguno o ambos acertaron: otra pregunta de desempate entre los mismos.
       const pos = this.state.tiedTeams.indexOf(this.state.turnTeam)
       this.state = {
         ...this.state,
@@ -265,12 +327,12 @@ export class HostEngine {
   }
 
   private async finish() {
-    this.state = { ...this.state, phase: 'finished', deadlineAt: null }
+    this.state = { ...this.state, phase: 'finished', deadlineAt: null, advanceAt: null }
     await this.write()
   }
 
   // ---------------------------------------------------------
-  // Persistencia y ticker de tiempo
+  // Persistencia y temporizadores
   // ---------------------------------------------------------
 
   private async write() {
@@ -287,13 +349,18 @@ export class HostEngine {
     this.onError(message)
   }
 
-  /** Reemplaza el setTimeout del servidor: deadline absoluto en el estado. */
+  /** Ticker de 1 s: cierra la pregunta al vencer y avanza el reveal solo. */
   private startTicker() {
     this.ticker = window.setInterval(() => {
+      if (this.state.phase !== 'playing') return
       if (this.state.stage === 'question' && this.state.active && this.state.deadlineAt !== null) {
         if (Date.now() >= this.state.deadlineAt) {
-          this.resolve(null)
+          this.resolve()
           void this.write()
+        }
+      } else if (this.state.stage === 'reveal' && this.state.advanceAt !== null) {
+        if (Date.now() >= this.state.advanceAt) {
+          void this.advance()
         }
       }
     }, 1000)
@@ -302,5 +369,10 @@ export class HostEngine {
   private stopTicker() {
     if (this.ticker !== null) window.clearInterval(this.ticker)
     this.ticker = null
+  }
+
+  private clearSpinTimer() {
+    if (this.spinTimer !== null) window.clearTimeout(this.spinTimer)
+    this.spinTimer = null
   }
 }

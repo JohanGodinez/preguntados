@@ -26,8 +26,10 @@ type RoomStore = {
   playerId: string | null
   error: string | null
   enter: (mode: Mode) => void
-  createRoom: (config: GameConfig) => Promise<boolean>
-  joinRoom: (code: string) => Promise<boolean>
+  createRoom: (config: GameConfig, playerName: string) => Promise<boolean>
+  joinRoom: (code: string, name: string) => Promise<boolean>
+  watch: (code: string) => Promise<void>
+  boardNext: () => Promise<void>
   act: (event: string, payload?: unknown) => Promise<boolean>
   closeRoom: () => Promise<void>
   leaveRoom: () => void
@@ -52,10 +54,16 @@ const clearPlayer = () => localStorage.removeItem(PLAYER_KEY)
 
 /** Restaura el estado si el host refrescó a mitad de giro (pending no persiste). */
 const repairResumedState = (state: GameState): GameState => {
-  if (state.phase === 'playing' && state.stage === 'spin' && state.categoryId !== null) {
-    return { ...state, categoryId: null }
+  const normalized: GameState = {
+    ...state,
+    answers: Array.isArray(state.answers) ? state.answers : state.config.teams.map(() => null),
+    results: Array.isArray(state.results) ? state.results : state.config.teams.map(() => null),
+    advanceAt: state.advanceAt ?? null,
   }
-  return state
+  if (normalized.phase === 'playing' && normalized.stage === 'spin' && normalized.categoryId !== null) {
+    return { ...normalized, categoryId: null, answers: normalized.config.teams.map(() => null) }
+  }
+  return normalized
 }
 
 export const storedPlayerCode = () => readStored<PlayerCredentials>(localStorage, PLAYER_KEY)?.code ?? null
@@ -74,38 +82,43 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
   let engine: HostEngine | null = null
   let actionQueue: Promise<void> = Promise.resolve()
   let currentCode: string | null = null
+  let retrack: (() => void) | null = null
 
   const recompute = () => {
     if (!gameRaw || !currentCode) {
       set({ state: null })
       return
     }
-    const onlineKeys = new Set(Object.keys(presence))
-    const hostOnline = Object.values(presence).some((entries) =>
-      entries.some((e) => e.role === 'host'),
-    )
-    // La pregunta solo se ve en el equipo en turno (y en el host, que no
-    // tiene playerId); el resto ve "esperando" sin el texto ni las opciones.
-    const myId = get().playerId
-    const me = (myId ? playersRows.find((p) => p.id === myId) : undefined) ?? null
-    const hiddenQuestion =
-      gameRaw.stage === 'question' &&
-      gameRaw.active !== null &&
-      me !== null &&
-      me.team_index !== gameRaw.turnTeam
-    const visible: GameState = hiddenQuestion ? { ...gameRaw, active: null } : gameRaw
+    // Presencia: las entradas traen el playerId además de la clave del canal.
+    const onlineIds = new Set<string>()
+    let hostOnline = false
+    for (const entries of Object.values(presence)) {
+      for (const entry of entries) {
+        if (entry.role === 'host') hostOnline = true
+        if (entry.playerId) onlineIds.add(entry.playerId)
+      }
+    }
+    // Salas creadas antes de la mecánica simultánea no tienen answers/results.
+    const normalized: GameState = {
+      ...gameRaw,
+      answers: Array.isArray(gameRaw.answers) ? gameRaw.answers : gameRaw.config.teams.map(() => null),
+      results: Array.isArray(gameRaw.results) ? gameRaw.results : gameRaw.config.teams.map(() => null),
+      advanceAt: gameRaw.advanceAt ?? null,
+    }
     const state: PublicState = {
       code: currentCode,
-      ...visible,
+      ...normalized,
       players: playersRows.map((p) => ({
         id: p.id,
         name: p.name,
         teamIndex: p.team_index,
-        online: onlineKeys.has(p.id),
+        online: onlineIds.has(p.id),
       })),
       hostOnline,
       deadlineIn:
-        visible.deadlineAt !== null ? Math.max(0, visible.deadlineAt - Date.now()) : null,
+        normalized.deadlineAt !== null ? Math.max(0, normalized.deadlineAt - Date.now()) : null,
+      advanceIn:
+        normalized.advanceAt !== null ? Math.max(0, Math.ceil((normalized.advanceAt - Date.now()) / 1000)) : null,
     }
     set({ state })
   }
@@ -115,6 +128,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
     engine = null
     if (channel) void client?.removeChannel(channel)
     channel = null
+    retrack = null
     gameRaw = null
     playersRows = []
     presence = {}
@@ -123,8 +137,10 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
 
   const handleClosed = () => {
     teardownRoom()
-    clearHost()
-    clearPlayer()
+    // El tablero también recibe este evento; no debe borrar credenciales ajenas.
+    const { mode } = get()
+    if (mode === 'host') clearHost()
+    if (mode === 'player') clearPlayer()
     set({ state: null, playerId: null, error: 'La sala se cerró' })
   }
 
@@ -153,7 +169,7 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
     }).catch(() => {})
   }
 
-  const subscribeRoom = (code: string, presenceKey: string, role: 'host' | 'player') => {
+  const subscribeRoom = (code: string, presenceKey: string, role: 'host' | 'player' | 'board') => {
     if (!client) return
     currentCode = code
     const ch = client
@@ -181,10 +197,18 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
         recompute()
       })
     channel = ch
+    // El creador puede registrarse como jugador DESPUÉS de suscribirse,
+    // así que la pista de presencia se re-emite al entrar y con cada sync.
+    retrack = () => {
+      const playerId = get().playerId
+      if (role === 'board') void ch.track({ role: 'board' })
+      else if (role === 'host') void ch.track({ role: 'host', playerId })
+      else void ch.track({ role: 'player', playerId: presenceKey })
+    }
     ch.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         set({ error: null })
-        void ch.track(role === 'host' ? { role: 'host' } : { role: 'player', playerId: presenceKey })
+        retrack?.()
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         set({ error: 'No se pudo conectar a Supabase Realtime' })
       }
@@ -240,6 +264,12 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
         onError: (message) => set({ error: message }),
       })
       subscribeRoom(creds.code, 'host', 'host')
+      // El creador también juega: recupera su identidad de jugador.
+      const playerCreds = readStored<PlayerCredentials>(localStorage, PLAYER_KEY)
+      if (playerCreds?.code === creds.code) {
+        await joinWithToken(creds.code, '', playerCreds.token)
+        retrack?.()
+      }
       await fetchRoomSnapshot(creds.code)
       set({ resuming: false, error: null })
       return
@@ -316,11 +346,12 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
     error: isSupabaseConfigured ? null : MISSING_CONFIG_ERROR,
 
     enter: (mode) => {
+      if (get().mode === mode) return
       set({ mode, error: client ? null : MISSING_CONFIG_ERROR })
       void resume()
     },
 
-    createRoom: async (config) => {
+    createRoom: async (config, playerName) => {
       if (!client) {
         set({ error: MISSING_CONFIG_ERROR })
         return false
@@ -362,17 +393,25 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
       })
       saveHost({ code, hostToken })
       subscribeRoom(code, 'host', 'host')
+      // El creador entra como un jugador más: juega desde su misma pestaña.
+      const joined = await joinWithToken(code, playerName.trim() || 'Jugador 1')
+      retrack?.()
+      if (!joined) {
+        teardownRoom()
+        clearHost()
+        return false
+      }
       await fetchRoomSnapshot(code)
       set({ error: null })
       return true
     },
 
-    joinRoom: async (code) => {
+    joinRoom: async (code, name) => {
       const normalized = code.trim().toUpperCase()
       const existing = readStored<PlayerCredentials>(localStorage, PLAYER_KEY)
       const creds = await joinWithToken(
         normalized,
-        '',
+        name,
         existing?.code === normalized ? existing.token : undefined,
       )
       if (!creds) return false
@@ -383,33 +422,48 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
       return true
     },
 
+    // Tablero espectador: se suscribe sin credenciales ni motor.
+    watch: async (code) => {
+      if (!client) {
+        set({ error: MISSING_CONFIG_ERROR })
+        return
+      }
+      teardownRoom()
+      set({ resuming: true, error: null })
+      subscribeRoom(code.trim().toUpperCase(), `board-${Math.random().toString(36).slice(2, 8)}`, 'board')
+      await fetchRoomSnapshot(code.trim().toUpperCase())
+      set({ resuming: false })
+    },
+
+    // El tablero puede acelerar el reveal; el creador no necesita estar mirando.
+    boardNext: async () => {
+      if (!client || !currentCode) return
+      const { error } = await client.from('actions').insert({
+        game_code: currentCode,
+        player_id: 'tablero',
+        type: PLAYER_ACTIONS.NEXT,
+        payload: {},
+      })
+      if (error) set({ error: error.message })
+    },
+
     act: async (event, payload) => {
       if (!client) {
         set({ error: MISSING_CONFIG_ERROR })
         return false
       }
-      if (get().mode === 'host' && engine) {
-        switch (event) {
-          case 'host:start':
-            await engine.start()
-            break
-          case 'host:spin':
-            await engine.spin()
-            break
-          case 'host:show':
-            await engine.show()
-            break
-          case 'host:next':
-            await engine.next()
-            break
-          default:
-            set({ error: `Acción desconocida: ${event}` })
-            return false
+      // Acciones que ejecuta el motor en la pestaña del creador.
+      if (event === 'host:start') {
+        if (!engine) {
+          set({ error: 'La partida no está activa en este dispositivo' })
+          return false
         }
+        await engine.start()
         set({ error: null })
         return true
       }
-      // Modo jugador: acciones hacia el host.
+      // Acciones de jugador: valen igual para el creador y para el resto,
+      // porque viajan por la tabla `actions` hasta el motor.
       const creds = readStored<PlayerCredentials>(localStorage, PLAYER_KEY)
       const playerId = get().playerId
       if (!creds || !playerId) {
@@ -431,22 +485,30 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
         set({ error: null })
         return true
       }
-      if (event === 'player:answer') {
-        const { error } = await client.from('actions').insert({
-          game_code: creds.code,
-          player_id: playerId,
-          type: PLAYER_ACTIONS.ANSWER,
-          payload: payload ?? {},
-        })
-        if (error) {
-          set({ error: error.message })
-          return false
-        }
-        set({ error: null })
-        return true
+      const type =
+        event === 'player:answer'
+          ? PLAYER_ACTIONS.ANSWER
+          : event === 'player:spin'
+            ? PLAYER_ACTIONS.SPIN
+            : event === 'player:next'
+              ? PLAYER_ACTIONS.NEXT
+              : null
+      if (!type) {
+        set({ error: `Acción desconocida: ${event}` })
+        return false
       }
-      set({ error: `Acción desconocida: ${event}` })
-      return false
+      const { error } = await client.from('actions').insert({
+        game_code: creds.code,
+        player_id: playerId,
+        type,
+        payload: payload ?? {},
+      })
+      if (error) {
+        set({ error: error.message })
+        return false
+      }
+      set({ error: null })
+      return true
     },
 
     closeRoom: async () => {
@@ -456,7 +518,8 @@ export const useRoomStore = create<RoomStore>()((set, get) => {
       }
       teardownRoom()
       clearHost()
-      set({ state: null, error: null })
+      clearPlayer()
+      set({ state: null, playerId: null, error: null })
     },
 
     leaveRoom: () => {

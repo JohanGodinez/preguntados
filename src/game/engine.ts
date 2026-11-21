@@ -102,9 +102,10 @@ export const initialState = (config: GameConfig): GameState => ({
   categoryId: null,
   active: null,
   correctIndex: null,
-  selected: null,
-  result: null,
+  answers: config.teams.map(() => null),
+  results: config.teams.map(() => null),
   wheelCategoryIds: config.categoryIds,
   deadlineAt: null,
+  advanceAt: null,
   usedIds: [],
 })

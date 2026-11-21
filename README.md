@@ -2,12 +2,27 @@
 
 Juego de trivia por equipos estilo Preguntados (party game). React 19 + Vite + Tailwind v4, con Supabase (Postgres + Realtime) como backend: sin servidor propio.
 
+## Cómo se juega
+
+- **Crear sala** (`/crear`): cualquier participante configura equipos, rondas, categorías y tiempo, y crea la sala desde su celular. Quien crea también juega; no hay pantalla de host obligatoria.
+- **Unirse** (`/unirse`): el resto entra con el código de 5 letras o el QR, escribe su nombre y elige equipo.
+- **Tablero** (`/host` o `/tablero?c=CODE`): pantalla grande opcional (TV/tablet) en modo espectador, sin credenciales.
+
+Mecánica de ronda:
+
+1. Gira solo el equipo en turno, desde su celular, y la categoría se elige al azar.
+2. Al terminar el giro **ambos equipos ven la misma pregunta y responden a la vez**. La primera respuesta de cada equipo queda fija; si nadie responde antes del límite, cuenta como sin respuesta.
+3. Se revela la correcta: cada equipo que acertó suma **+10**. El reveal dura 6 s y avanza solo; el tablero tiene un botón "Siguiente ahora" para acelerar.
+4. El turno alterna cada ronda. Si al terminar hay empate en el primer puesto, se juega **muerte súbita**: los equipos empatados responden otra pregunta; gana el único que acierte (si aciertan ambos o ninguno, se repite).
+
 ## Arquitectura
 
-- **Frontend (Netlify):** la app React completa. El navegador del **host** corre el motor del juego (`src/game/hostEngine.ts`) y persiste el estado en la tabla `games`.
-- **Supabase Realtime:** los demás clientes reciben el estado por Postgres Changes (`games`, `players`) y reportan presencias (`online`) por canales de Presence. Las acciones de jugadores (`player:answer`) llegan al host vía la tabla `actions`.
-- **Seguridad:** los tokens secretos viven en la tabla `secrets` (invisible por API, no está en la publication de realtime). La columna `questions.correct` solo la lee el host vía la RPC `get_questions`.
+- **Frontend (Netlify):** la app React completa. El navegador del **creador** corre el motor del juego (`src/game/hostEngine.ts`) y persiste el estado en la tabla `games`.
+- **Supabase Realtime:** los demás clientes reciben el estado por Postgres Changes (`games`, `players`) y reportan presencias (`online`) por canales de Presence. Las acciones de jugadores (`answer`, `spin`, `next`) llegan al motor vía la tabla `actions`.
+- **Seguridad:** los tokens secretos viven en la tabla `secrets` (invisible por API, no está en la publication de realtime). La columna `questions.correct` solo la lee el creador vía la RPC `get_questions`.
 - **Protocolo:** `shared/protocol.ts` es la fuente de verdad de los tipos (`PublicState`, `GameState`, `GameConfig`).
+
+La pregunta se muestra a todos los equipos (la respuesta correcta solo se conoce en el reveal). El estado guarda `answers` y `results` alineados con `config.teams`.
 
 ## Puesta en marcha
 
@@ -54,6 +69,6 @@ Editá la tabla `questions` desde el dashboard de Supabase o con SQL: no hace fa
 
 ## Notas operativas
 
-- El **host es el árbitro**: su pestaña debe quedar abierta durante la partida; si la cierra, la partida queda pausa y puede retomarla desde la misma URL (los credenciales viven en sessionStorage).
+- El **creador es el árbitro**: su pestaña debe quedar abierta durante la partida (ahí corre el motor); si la cierra, la partida queda en pausa y puede retomarla al volver (las credenciales viven en sessionStorage). El resto de los jugadores no necesita hacer nada.
 - El free tier de Supabase **pausa** el proyecto tras ~1 semana sin uso; se reactiva con un click desde el dashboard.
 - Los códigos de sala son la única "credencial de entrada" para jugadores: cualquiera con el código puede entrar a la sala.

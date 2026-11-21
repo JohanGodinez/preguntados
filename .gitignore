@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Capturas de verificación visual
+.opencode/shots/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
